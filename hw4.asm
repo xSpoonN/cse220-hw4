@@ -247,7 +247,11 @@ get_relation: #a0 = network addr, a1 = name1, a2 = name2
 	sw $s1 4($sp)
 	sw $s2 8($sp)
 	sw $s3 12($sp)
-	addi $s1 $a0 60               # Jumps to start of Network edge set
+	addi $t0 $a0 24                 # Jump to start of node set.
+	lw $t1 0($a0)                  # Load number of nodes
+	lw $t2 8($a0)                  # Load size of nodes
+	mul $t2 $t2 $t1                # Multiply num x size, to get offset from set of nodes
+	add $s1 $t2 $t0                # Jump to start of edge set.
 	move $s2 $a2                  # Copies addr of name2
 	move $s3 $ra                  # Preserves return addr
 
@@ -265,21 +269,22 @@ get_relation: #a0 = network addr, a1 = name1, a2 = name2
 	# Outer loop, goes to every edge.
 	findrelationloop:
 		beq $t2 $t3 relationnotfound  # Since t3 is 1 greater than the amount of edges, if loop hits this, relation is not in Network.
-		move $t6 $t9       # Copy of base addr of edge, incase a match is found.
 		lw $t4 0($t9)     # Loads first field of this edge
 		lw $t5 4($t9)     # Loads second field of this edge
 		beq $s0 $t4 frmatch1     # First field match
+		back1:
 		beq $s0 $t5 frmatch2     # Second field match
+		back2:
 		addi $t9 $t9 12  # Increment addr by edge size, goes to next edge
 		addi $t2 $t2 1   # Increment edges used counter
 		j findrelationloop
 
 	frmatch1:
-		bne $s2 $t5 findrelationloop          # If the second field is not a match, skip this edge
+		bne $s2 $t5 back1          # If the second field is not a match, skip this edge
 		j frfound	                # If it IS terminated, then found.
 		
 	frmatch2:
-		bne $s2 $t4 findrelationloop          # If the first field is not a match, skip this edge
+		bne $s2 $t4 back2          # If the first field is not a match, skip this edge
 		j frfound	 
 	
 	relationnotfound:
@@ -297,18 +302,18 @@ get_relation: #a0 = network addr, a1 = name1, a2 = name2
 		lw $s2 8($sp)
 		lw $s3 12($sp)
 		addi $sp $sp 16               # Stack deallocation
-		move $v0 $t6
+		move $v0 $t9
 		jr $ra
 
 .globl add_relation_property
 add_relation_property: #a0 = Network, a1 = name1, a2 = name2, a3 = propname, load from fp 1 = propval
 	move $fp $sp                    # Frame pointer
-	lw $t0 0($fp)                   # load arg5
+	lw $s1 0($fp)                   # load arg5 into $t2
 	addi $sp $sp -8
 	sw $s0 0($sp)                   # Save s0
 	sw $s1 4($sp)                   # Save s1
 	li $t1 1
-	bne $t0 $t1 addrelationerror    # Checks that prop_val is 1
+	bne $s1 $t1 addrelationerror    # Checks that prop_val is 1
 	
 	# Checks that propname is "FRIEND"
 	lbu $t0 0($a3)       # Load first char
@@ -329,20 +334,36 @@ add_relation_property: #a0 = Network, a1 = name1, a2 = name2, a3 = propname, loa
 	lbu $t0 5($a3)       # Load char
 	li $t1 'D'    # 'D'
 	bne $t0 $t1 addrelationerror
-	lbu $t0 4($a3)       # Check for null termination
+	lbu $t0 6($a3)       # Check for null termination
 	bnez $t0 addrelationerror
 	
-	# Handle name truncation
+	# Handle name truncation, I think get_person already handles truncation innately?
 	# Call get_relation
 	# ???
 	# Profit
-
-
-	addrelationerror:
+	move $s0 $ra           # Preserve $ra
+	jal get_relation
+	move $ra $s0           # Restore $ra
+	beqz $v0 addrelationerror           # If no relation is found, error.
+	sw $s1 8($v0)             # Store prop_val into Network
+	lw $s0 0($sp)                   # Restore s0
+	lw $s1 4($sp)                   # Restore s1
+	addi $sp $sp 8
+	li $v0 1
+	jr $ra
+	
+	addrelationerror:	
+		lw $s0 0($sp)                   # Restore s0
+		lw $s1 4($sp)                   # Restore s1
+		addi $sp $sp 8
 		li $v0 0
 		jr $ra
 
-
 .globl is_a_distant_friend
 is_a_distant_friend:
+	
+	
+
+
+
 	jr $ra
