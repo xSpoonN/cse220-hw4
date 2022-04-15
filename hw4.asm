@@ -137,7 +137,6 @@ get_person: #a0 = network addr, a1 = name
 	move $s0 $a1                  # Copies addr of name
 	addi $s1 $a0 24               # Jumps to start of Network node set
 
-	# Checks that person addr is aligned properly.
 	lw $t0 8($a0)        # Size of node
 	lw $t1 16($a0)       # Num of nodes used
 	addi $t3 $t1 1       # Increment by one
@@ -153,8 +152,9 @@ get_person: #a0 = network addr, a1 = name
 		#Inner loop, matches name with node name.
 		findpersoninner:
 			beqz $t5 fpfound       # If the entire loop is successful, the name is found.
-			lbu $t1 0($s0)      # Loads first char of name
-			lbu $t4 0($t9)      # Loads first char of node name
+			lbu $t1 0($s0)      # Loads char of name
+			lbu $t4 0($t9)      # Loads char of node name
+			beqz $t4 fpnull        # If the name in node hits a null terminator
 			bne $t1 $t4 fpinnerdone         # If chars are not equal, exit loop immediately to go to next node.
 			addi $s0 $s0 1      # Increments addr counter (Goes to next char)
 			addi $t9 $t9 1      # Increments addr counter (Goes to next char)
@@ -162,10 +162,15 @@ get_person: #a0 = network addr, a1 = name
 			j findpersoninner
 			
 		fpinnerdone:
+			move $t9 $t6     # Reset t9 to base addr.
 			add $t9 $t9 $t0  # Increment addr by node size, goes to next node
 			addi $t2 $t2 1   # Increment nodes used counter
 			j findpersonloop
 
+	fpnull:
+		bnez $t1 fpinnerdone         # If name input is not also terminated at this point, not a match.
+		j fpfound	                # If it IS terminated, then found.
+		
 	personnotfound:
 		lw $s0 0($sp)
 		lw $s1 4($sp)
@@ -189,24 +194,41 @@ add_relation:         #a0 = Network addr, a1 = name1, a2 = name2
 	sw $s3 12($sp)
 	move $s3 $ra                   # Preserves ra
 	jal get_person
+	move $ra $s3                   # Restores return addr
 	beqz $v0 relationerror         # Checks for valid person
 	move $s0 $v0                   # Copies over node addr
 	move $s2 $a1                   # Preserves name1
 	move $a1 $a2
 	jal get_person
+	move $ra $s3                   # Restores return addr
 	beqz $v0 relationerror         # Checks for valid person
 	move $s1 $v0                   # Copies over node addr
 	beq $s0 $s1 relationerror      # Checks if names are identical
 	move $a1 $s2                   # Restores name1
-	move $ra $s3
 	lw $t0 4($a0)                  # Total edges
 	lw $t1 20($a0)                 # Current num of edges
 	bge $t1 $t0 relationerror      # Checks if max relations is reached
-	#
-	#
+
 	# Check for existing relations (Probably similar algorithm to part 3)
-	#
-	#
+	jal get_relation               # Checks for existing relation
+	move $ra $s3                   # Restores return addr
+	bnez $v0 relationerror         # If relation exists, error
+	addi $t0 $a0 24                 # Jump to start of node set.
+	lw $t1 0($a0)                  # Load number of nodes
+	lw $t2 8($a0)                  # Load size of nodes
+	mul $t2 $t2 $t1                # Multiply num x size, to get offset from set of nodes
+	add $t3 $t2 $t0                # Jump to start of edge set.
+	lw $t1 20($a0)                 # Current num of edges
+	li $t5 12
+	mul $t2 $t1 $t5                 # x4 bytes per word, x3 words per edge
+	add $t3 $t3 $t2                # Go to first unused edge space
+	sw $s0 0($t3)                  # Save first person
+	sw $s1 4($t3)                  # Save second person
+	sw $0 8($t3)                   # Save 0 in third field
+	lw $t9 20($a0)          	# Load current number of edges
+	addi $t9 $t9 1          	# Increment
+	sw $t9 20($a0)          	# Save back into Network
+
 	lw $s0 0($sp)
 	lw $s1 4($sp)
 	lw $s2 8($sp)
@@ -218,9 +240,108 @@ add_relation:         #a0 = Network addr, a1 = name1, a2 = name2
 		li $v0 0
 		jr $ra
 
+.globl get_relation
+get_relation: #a0 = network addr, a1 = name1, a2 = name2
+	addi $sp $sp -16               # Stack allocation
+	sw $s0 0($sp)
+	sw $s1 4($sp)
+	sw $s2 8($sp)
+	sw $s3 12($sp)
+	addi $s1 $a0 60               # Jumps to start of Network edge set
+	move $s2 $a2                  # Copies addr of name2
+	move $s3 $ra                  # Preserves return addr
+
+	# Call get_person on the input names to get 2 addresses. Go through every node and check if their values are equal to the addresses returned
+	jal get_person
+	move $s0 $v0                  # Saves name1 addr into s0
+	move $a1 $a2                  # Moves name2 to a1 for get_person
+	jal get_person
+	move $s2 $v0                  # Saves name2 addr into s1
+	move $ra $s3
+	lw $t1 20($a0)       # Num of edges used
+	addi $t3 $t1 1       # Increment by one
+	move $t9 $s1         # Copy of edge base pointer
+	li $t2 0             # Counter for edges used
+	# Outer loop, goes to every edge.
+	findrelationloop:
+		beq $t2 $t3 relationnotfound  # Since t3 is 1 greater than the amount of edges, if loop hits this, relation is not in Network.
+		move $t6 $t9       # Copy of base addr of edge, incase a match is found.
+		lw $t4 0($t9)     # Loads first field of this edge
+		lw $t5 4($t9)     # Loads second field of this edge
+		beq $s0 $t4 frmatch1     # First field match
+		beq $s0 $t5 frmatch2     # Second field match
+		addi $t9 $t9 12  # Increment addr by edge size, goes to next edge
+		addi $t2 $t2 1   # Increment edges used counter
+		j findrelationloop
+
+	frmatch1:
+		bne $s2 $t5 findrelationloop          # If the second field is not a match, skip this edge
+		j frfound	                # If it IS terminated, then found.
+		
+	frmatch2:
+		bne $s2 $t4 findrelationloop          # If the first field is not a match, skip this edge
+		j frfound	 
+	
+	relationnotfound:
+		lw $s0 0($sp)
+		lw $s1 4($sp)
+		lw $s2 8($sp)
+		lw $s3 12($sp)
+		addi $sp $sp 16               # Stack deallocation
+		li $v0 0
+		jr $ra
+	
+	frfound:
+		lw $s0 0($sp)
+		lw $s1 4($sp)
+		lw $s2 8($sp)
+		lw $s3 12($sp)
+		addi $sp $sp 16               # Stack deallocation
+		move $v0 $t6
+		jr $ra
+
 .globl add_relation_property
-add_relation_property:
-	jr $ra
+add_relation_property: #a0 = Network, a1 = name1, a2 = name2, a3 = propname, load from fp 1 = propval
+	move $fp $sp                    # Frame pointer
+	lw $t0 0($fp)                   # load arg5
+	addi $sp $sp -8
+	sw $s0 0($sp)                   # Save s0
+	sw $s1 4($sp)                   # Save s1
+	li $t1 1
+	bne $t0 $t1 addrelationerror    # Checks that prop_val is 1
+	
+	# Checks that propname is "FRIEND"
+	lbu $t0 0($a3)       # Load first char
+	li $t1 'F'    # 'F'
+	bne $t0 $t1 addrelationerror
+	lbu $t0 1($a3)       # Load char
+	li $t1 'R'    # 'R'
+	bne $t0 $t1 addrelationerror
+	lbu $t0 2($a3)       # Load char
+	li $t1 'I'    # 'I'
+	bne $t0 $t1 addrelationerror
+	lbu $t0 3($a3)       # Load char
+	li $t1 'E'    # 'E'
+	bne $t0 $t1 addrelationerror
+	lbu $t0 4($a3)       # Load char
+	li $t1 'N'    # 'N'
+	bne $t0 $t1 addrelationerror
+	lbu $t0 5($a3)       # Load char
+	li $t1 'D'    # 'D'
+	bne $t0 $t1 addrelationerror
+	lbu $t0 4($a3)       # Check for null termination
+	bnez $t0 addrelationerror
+	
+	# Handle name truncation
+	# Call get_relation
+	# ???
+	# Profit
+
+
+	addrelationerror:
+		li $v0 0
+		jr $ra
+
 
 .globl is_a_distant_friend
 is_a_distant_friend:
