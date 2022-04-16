@@ -364,19 +364,32 @@ add_relation_property: #a0 = Network, a1 = name1, a2 = name2, a3 = propname, loa
 
 .globl is_a_distant_friend
 is_a_distant_friend: #a0 = Network, a1 = name1, a2 = name2
-	addi $sp $sp -16
+	addi $sp $sp -28
 	sw $fp 0($sp)           # Preserve fp = start of "visited" array. When using this array, set the next value to 0 for null termination.
 	sw $s0 4($sp)           # Preserve s0
 	sw $s1 8($sp)           # Preserve s1
-	sw $s2 12($sp)           # Preserve s1
+	sw $s2 12($sp)           # Preserve s2
+	sw $s3 16($sp)           # Preserve s3
+	sw $s4 20($sp)           # Preserve s4
+	sw $s5 24($sp)           # Preserve s5
+	move $fp $sp             # Saves beginning of array.
+	lw $t0 0($a0)            # Number of nodes
+	li $t1 4
+	mul $t0 $t0 $t1          # num of nodes x 4 (per byte)
+	addi $t0 $t0 4           # Add 4 for null termination.
+	move $s5 $t0             # Save num of nodes x4 for stack deallocation
+	sub $t0 $0 $t0
+	add $sp $sp $t0
 	# Check the name1 and name2 exist in the network
 	move $s2 $ra               # Preserve ra
 	jal get_person             # Check if name1 exists
 	beqz $v0 dferror2          # If person not found, error
+	move $s1 $v0               # First person addr = s1
 	move $s0 $a1               # Preserve a1
 	move $a1 $a2               # Make a1 the second name
 	jal get_person             # Check if name2 exists
 	beqz $v0 dferror2          # If person not found, error
+	move $s3 $v0               # Second person addr = s3
 	move $a1 $s0               # Restore a1
 	move $ra $s2               # Restore ra
 	# Checks for direct relations
@@ -391,49 +404,133 @@ is_a_distant_friend: #a0 = Network, a1 = name1, a2 = name2
 		beq $t1 $t0 dferror       # If the relation is a friendship, error.
 		j dfnoterror
 	dferror:
+		add $sp $sp $s5         # Deallocate space allocated for the network nodes
+		lw $fp 0($sp)           # Restore fp = start of "visited" array. When using this array, set the next value to 0 for null termination.
+		lw $s0 4($sp)           # Restore s0
+		lw $s1 8($sp)           # Restore s1
+		lw $s2 12($sp)           # Restore s2
+		lw $s3 16($sp)           # Restore s3
+		lw $s4 20($sp)           # Restore s4
+		lw $s5 24($sp)           # Restore s5
+		addi $sp $sp 28
 		li $v0 0
 		jr $ra
 	dferror2:
+		add $sp $sp $s5         # Deallocate space allocated for the network nodes
+		lw $fp 0($sp)           # Restore fp = start of "visited" array. When using this array, set the next value to 0 for null termination.
+		lw $s0 4($sp)           # Restore s0
+		lw $s1 8($sp)           # Restore s1
+		lw $s2 12($sp)           # Restore s2
+		lw $s3 16($sp)           # Restore s3
+		lw $s4 20($sp)           # Restore s4
+		lw $s5 24($sp)           # Restore s5
+		addi $sp $sp 28
 		li $v0 -1
 		jr $ra
 	dfnoterror:
 		move $s2 $ra
+		move $a1 $s1              # a1 = name1 addr
+		move $a2 $s3              # a2 = name2 addr
+		li $a3 0                  # a3 = stack offset, initially 0
 		jal dfhelper              # Call dfhelper
 		move $ra $s2
 		beqz $v0 dferror
+		add $sp $sp $s5         # Deallocate space allocated for the network nodes
+		lw $fp 0($sp)           # Restore fp = start of "visited" array. When using this array, set the next value to 0 for null termination.
+		lw $s0 4($sp)           # Restore s0
+		lw $s1 8($sp)           # Restore s1
+		lw $s2 12($sp)           # Restore s2
+		lw $s3 16($sp)           # Restore s3
+		lw $s4 20($sp)           # Restore s4
+		lw $s5 24($sp)           # Restore s5
+		addi $sp $sp 28
 		li $v0 1
 		jr $ra
 
 .globl dfhelper
-dfhelper: #a0 Network, a1 name1, a2, name2, v0 = 0 if not df, 1 if df.
+dfhelper: #a0 Network, a1 name1 (node to be operated on), a2 name2 (node to be found), a3 stackoffset; v0 = 0 if not df, 1 if df.
+	# To check adjacent edges, go through every edge and check if one of the fields is the parent node.
+	#
+	# set name1 to be discovered (use an array in the stack, null terminated)
+	# for all adjacent edges :
+	# 		if the connecting node is not discovered, recursive call on that node.
+	#
+	addi $sp $sp -12
+	sw $s4 0($sp)             # Preserves s4
+	sw $s5 4($sp)             # Preserves s5
+	sw $s6 8($sp)             # Preserves s6
 	
+	beq $a1 $a2 dfhfound
+	add $t0 $fp $a3           # Adds stack offset
+	sw $a1 0($t0)             # Saves a discovered node into the stack
+	addi $a3 $a3 4            # Increments stack offset
+	sw $0 4($t0)              # Null terminates.
+	addi $t3 $a0 24                 # Jump to start of node set.
+	lw $t1 0($a0)                  # Load number of nodes
+	lw $t2 8($a0)                  # Load size of nodes
+	mul $t2 $t2 $t1                # Multiply num x size, to get offset from set of nodes
+	add $s4 $t2 $t3                # Jump to start of edge set.
+	lw $s5 20($a0)                 # Loads number of used edges
+	dfhloop:
+		beqz $s5 dfhnotfound
+		lw $t8 0($s4)
+		lw $t9 4($s4)
+		beq $t8 $a1 dfhmatch1     # Checks if first field matches
+		beq $t9 $a1 dfhmatch2     # Checks if second field matches
+		dfhback:
+		addi $s4 $s4 12           # Go to next edge
+		addi $s5 $s5 -1           # Decrement used edges remaining
+		j dfhloop
 	
-	#
-	#
-	#
-	#
-	#
-	#
-	#
-	#
-	# Use stack as stack
-	# Push first edge to stack
-	# while (stack is not empty) {
-	#	edge = stack.pop
-	#   if edge is not discovered, then
-	#       label it as discovered in heap storage
-	#       push adjacent edges to stack (Involves checking relations from the one field to every other node in the network)
-	#
-	#
-	#
-	#
-	#
-	#
-	#
-	#
-	#
-	#
-
-
-
-	jr $ra
+	dfhmatch1:
+		# First check if the alternate field exists on the visited stack.
+		lw $t7 8($s4)             # Load third field
+		li $t6 1
+		bne $t7 $t6 dfhback       # If it is not a friendship edge, skip and go to next edge.
+		move $t0 $fp              # Make a copy of stack array start
+		lw $t1 0($t0)             # Loads first value of stack array
+		dfhmatchloop1:
+			beqz $t1 moveon1      # Name is not found on the stack, so continue and call dfhelper on it
+			beq $t1 $t9 dfhback   # If name IS found, then scrap this edge and go to the next one
+			addi $t0 $t0 4       # Decrement stack pointer, goes to next value in array
+			lw $t1 0($t0)         # Loads next value of stack array
+			j dfhmatchloop1		
+		moveon1:
+		move $a1 $t9           # Call dfhelper on the second name
+		move $s6 $ra           # Preserves return address
+		jal dfhelper
+		move $ra $s6
+		bne $v0 $0 dfhfound    # If it returns 1, then the df is found
+		j dfhnotfound
+	dfhmatch2:
+		move $t0 $fp              # Make a copy of stack array start
+		lw $t1 0($t0)             # Loads first value of stack array
+		dfhmatchloop2:
+			beqz $t1 moveon2      # Name is not found on the stack, so continue and call dfhelper on it
+			beq $t1 $t8 dfhback   # If name IS found, then scrap this edge and go to the next one
+			addi $t0 $t0 4       # Decrement stack pointer, goes to next value in array
+			lw $t1 0($t0)         # Loads next value of stack array
+			j dfhmatchloop2		
+		moveon2:
+		move $a1 $t8           # Call dfhelper on the first name
+		move $s6 $ra           # Preserves return address
+		jal dfhelper
+		move $ra $s6
+		bne $v0 $0 dfhfound    # If it returns 1, then the df is found
+		j dfhnotfound
+	
+	dfhnotfound:
+		lw $s4 0($sp)             # Preserves s4
+		lw $s5 4($sp)             # Preserves s5
+		lw $s6 8($sp)             # Preserves s6
+		addi $sp $sp 12
+		li $v0 0
+		jr $ra
+	
+	dfhfound:
+		lw $s4 0($sp)             # Preserves s4
+		lw $s5 4($sp)             # Preserves s5
+		lw $s6 8($sp)             # Preserves s6
+		addi $sp $sp 12
+		li $v0 1
+		jr $ra
