@@ -383,15 +383,17 @@ is_a_distant_friend: #a0 = Network, a1 = name1, a2 = name2
 	# Check the name1 and name2 exist in the network
 	move $s2 $ra               # Preserve ra
 	jal get_person             # Check if name1 exists
+	move $ra $s2               # Restore ra
 	beqz $v0 dferror2          # If person not found, error
+	move $s2 $ra               # Preserve ra
 	move $s1 $v0               # First person addr = s1
 	move $s0 $a1               # Preserve a1
 	move $a1 $a2               # Make a1 the second name
 	jal get_person             # Check if name2 exists
+	move $ra $s2               # Restore ra
 	beqz $v0 dferror2          # If person not found, error
 	move $s3 $v0               # Second person addr = s3
 	move $a1 $s0               # Restore a1
-	move $ra $s2               # Restore ra
 	# Checks for direct relations
 	move $s2 $ra
 	jal get_relation       # Gets direct relations
