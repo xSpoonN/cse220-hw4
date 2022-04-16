@@ -307,11 +307,12 @@ get_relation: #a0 = network addr, a1 = name1, a2 = name2
 
 .globl add_relation_property
 add_relation_property: #a0 = Network, a1 = name1, a2 = name2, a3 = propname, load from fp 1 = propval
-	move $fp $sp                    # Frame pointer
-	lw $s1 0($fp)                   # load arg5 into $t2
-	addi $sp $sp -8
+	addi $sp $sp -12
 	sw $s0 0($sp)                   # Save s0
 	sw $s1 4($sp)                   # Save s1
+	sw $fp 8($sp)                   # Save s1
+	addi $fp $sp 12
+	lw $s1 0($fp)                   # load arg5 into $t2
 	li $t1 1
 	bne $s1 $t1 addrelationerror    # Checks that prop_val is 1
 	
@@ -348,21 +349,90 @@ add_relation_property: #a0 = Network, a1 = name1, a2 = name2, a3 = propname, loa
 	sw $s1 8($v0)             # Store prop_val into Network
 	lw $s0 0($sp)                   # Restore s0
 	lw $s1 4($sp)                   # Restore s1
-	addi $sp $sp 8
+	lw $fp 8($sp)                   # Save s1
+	addi $sp $sp 12
 	li $v0 1
 	jr $ra
 	
 	addrelationerror:	
 		lw $s0 0($sp)                   # Restore s0
 		lw $s1 4($sp)                   # Restore s1
-		addi $sp $sp 8
+		lw $fp 8($sp)                   # Save s1
+		addi $sp $sp 12
 		li $v0 0
 		jr $ra
 
 .globl is_a_distant_friend
-is_a_distant_friend:
+is_a_distant_friend: #a0 = Network, a1 = name1, a2 = name2
+	addi $sp $sp -16
+	sw $fp 0($sp)           # Preserve fp = start of "visited" array. When using this array, set the next value to 0 for null termination.
+	sw $s0 4($sp)           # Preserve s0
+	sw $s1 8($sp)           # Preserve s1
+	sw $s2 12($sp)           # Preserve s1
+	# Check the name1 and name2 exist in the network
+	move $s2 $ra               # Preserve ra
+	jal get_person             # Check if name1 exists
+	beqz $v0 dferror2          # If person not found, error
+	move $s0 $a1               # Preserve a1
+	move $a1 $a2               # Make a1 the second name
+	jal get_person             # Check if name2 exists
+	beqz $v0 dferror2          # If person not found, error
+	move $a1 $s0               # Restore a1
+	move $ra $s2               # Restore ra
+	# Checks for direct relations
+	move $s2 $ra
+	jal get_relation       # Gets direct relations
+	move $ra $s2
+	bne $0 $v0 directfound        # Found a direct relation, need to check if it is a friendship
+	j dfnoterror
+	directfound:
+		lw $t0 8($v0)         # Loads the third field of the found edge
+		li $t1 1
+		beq $t1 $t0 dferror       # If the relation is a friendship, error.
+		j dfnoterror
+	dferror:
+		li $v0 0
+		jr $ra
+	dferror2:
+		li $v0 -1
+		jr $ra
+	dfnoterror:
+		move $s2 $ra
+		jal dfhelper              # Call dfhelper
+		move $ra $s2
+		beqz $v0 dferror
+		li $v0 1
+		jr $ra
+
+.globl dfhelper
+dfhelper: #a0 Network, a1 name1, a2, name2, v0 = 0 if not df, 1 if df.
 	
 	
+	#
+	#
+	#
+	#
+	#
+	#
+	#
+	#
+	# Use stack as stack
+	# Push first edge to stack
+	# while (stack is not empty) {
+	#	edge = stack.pop
+	#   if edge is not discovered, then
+	#       label it as discovered in heap storage
+	#       push adjacent edges to stack (Involves checking relations from the one field to every other node in the network)
+	#
+	#
+	#
+	#
+	#
+	#
+	#
+	#
+	#
+	#
 
 
 
