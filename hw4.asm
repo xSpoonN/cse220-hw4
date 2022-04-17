@@ -234,6 +234,7 @@ add_relation:         #a0 = Network addr, a1 = name1, a2 = name2
 	lw $s2 8($sp)
 	lw $s3 12($sp)
 	addi $sp $sp 16               # Stack deallocation
+	li $v0 1
 	jr $ra
 	
 	relationerror:
